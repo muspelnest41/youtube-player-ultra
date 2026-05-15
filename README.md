@@ -3,344 +3,472 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- 核心修正：允許傳遞 Referrer，這對版權影片驗證至關重要 -->
-    <meta name="referrer" content="always">
-    <title>YouTube 播放小幫手 Ultra</title>
-    
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>YouTube Player Ultra - 播放輔助</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        body { background-color: #020617; color: #f1f5f9; font-family: 'Inter', sans-serif; height: 100vh; overflow: hidden; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
-        .playlist-item { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .playlist-item.active { background: linear-gradient(90deg, rgba(239, 68, 68, 0.2) 0%, rgba(30, 41, 59, 0.5) 100%); border-left: 4px solid #ef4444; }
-        .sortable-ghost { opacity: 0.2; background: #ef4444; }
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
-        /* 播放器容器 */
-        .video-wrapper { position: relative; width: 100%; height: 0; padding-bottom: 56.25%; background: #000; border-radius: 1rem; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
-        #player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        body {
+            background-color: #0f172a;
+            color: #f1f5f9;
+        }
+        .video-container {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+            height: 0;
+            overflow: hidden;
+            border-radius: 0.75rem;
+            background: #000;
+        }
+        .video-container iframe, .video-placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 10px;
+        }
+        .ghost-card {
+            opacity: 0.5;
+            background: #334155 !important;
+        }
+        .btn-active { color: #38bdf8; }
+        .btn-inactive { color: #64748b; }
+        .infinite-badge { font-size: 1.2rem; line-height: 1; }
     </style>
 </head>
-<body class="flex flex-col">
+<body class="min-h-screen p-4 md:p-8">
 
-    <!-- A. 頂部輸入區 -->
-    <header class="p-4 border-b border-slate-800 bg-slate-900/80 flex-none z-10">
-        <div class="max-w-6xl mx-auto flex flex-col md:flex-row gap-3">
-            <div class="flex-grow flex items-center bg-black/40 rounded-xl px-4 border border-slate-700 focus-within:border-red-500 transition-all shadow-inner">
-                <i class="fab fa-youtube text-red-500 mr-3"></i>
-                <input type="text" id="urlInput" placeholder="請輸入 YouTube 網址 (支援帶參數的長短網址)..." 
-                       class="w-full bg-transparent py-3 text-sm focus:outline-none">
-                <button id="pasteBtn" class="p-2 text-slate-400 hover:text-white transition-colors" title="貼上剪貼簿">
-                    <i class="fas fa-paste"></i>
+    <div class="max-w-7xl mx-auto">
+        <!-- A. Header & Input Section -->
+        <header class="mb-8 border-b border-slate-700 pb-6">
+            <h1 class="text-3xl font-bold mb-6 flex items-center gap-3 text-white">
+                <i class="fab fa-youtube text-red-500 text-4xl"></i>
+                YouTube Player Ultra
+            </h1>
+            
+            <div class="flex flex-col md:flex-row gap-4 bg-slate-800/50 p-4 rounded-xl border border-slate-700 shadow-xl">
+                <div class="relative flex-grow">
+                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                        <i class="fab fa-youtube"></i>
+                    </span>
+                    <input type="text" id="videoInput" 
+                        class="block w-full pl-10 pr-12 py-3 bg-slate-900 border border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-white placeholder-slate-500" 
+                        placeholder="請貼上影片網址...">
+                    <button id="pasteBtn" title="從剪貼簿貼上"
+                        class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white transition-colors">
+                        <i class="far fa-paste text-xl"></i>
+                    </button>
+                </div>
+                <button id="loadBtn" 
+                    class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95">
+                    <i class="fas fa-plus"></i> 載入影片
                 </button>
             </div>
-            <button id="loadBtn" class="bg-red-600 hover:bg-red-500 text-white font-bold px-8 py-3 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2">
-                <i class="fas fa-plus"></i> 載入影片
-            </button>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- B. Left: Player Section -->
+            <div class="lg:col-span-7 xl:col-span-8">
+                <div class="sticky top-8">
+                    <div class="video-container shadow-2xl border border-slate-700">
+                        <div id="player"></div>
+                        <div id="placeholder" class="video-placeholder flex flex-col items-center justify-center text-slate-500 gap-4">
+                            <i class="fab fa-youtube text-6xl opacity-20"></i>
+                            <p class="text-lg font-medium opacity-50">等待播放清單載入...</p>
+                        </div>
+                    </div>
+                    
+                    <div id="errorDisplay" class="mt-4 p-4 bg-red-900/30 border border-red-500/50 rounded-lg text-red-200 hidden">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        <span id="errorMsg"></span>
+                    </div>
+
+                    <div id="currentInfo" class="mt-6 p-6 bg-slate-800/30 rounded-xl border border-slate-700 hidden">
+                        <span class="text-blue-400 text-sm font-bold uppercase tracking-wider">正在播放</span>
+                        <h2 id="currentTitle" class="text-xl font-semibold mt-1 text-white"></h2>
+                    </div>
+                </div>
+            </div>
+
+            <!-- C. Right: Playlist Section -->
+            <div class="lg:col-span-5 xl:col-span-4">
+                <div class="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl overflow-hidden flex flex-col max-h-[80vh]">
+                    <div class="p-4 border-b border-slate-700 bg-slate-800/80 backdrop-blur flex justify-between items-center">
+                        <h3 class="font-bold flex items-center gap-2">
+                            <i class="fas fa-list-ul text-blue-400"></i> 待播清單
+                        </h3>
+                        <span id="playlistCount" class="bg-slate-700 text-xs px-2 py-1 rounded-full text-slate-300">0</span>
+                    </div>
+                    
+                    <div id="playlist" class="flex-grow overflow-y-auto p-4 space-y-3 custom-scrollbar min-h-[300px]">
+                        <!-- Video items will appear here -->
+                    </div>
+
+                    <div class="p-4 bg-slate-900/50 border-t border-slate-700 text-center">
+                        <p class="text-xs text-slate-500">
+                            <i class="fas fa-info-circle mr-1"></i> 拖曳影片左側可調整播放順序
+                        </p>
+                    </div>
+                </div>
+            </div>
         </div>
-    </header>
+    </div>
 
-    <!-- 主內容區 -->
-    <main class="flex-grow flex flex-col md:flex-row overflow-hidden p-4 gap-4">
-        
-        <!-- B. 左側：播放區域 -->
-        <section class="flex-[3] flex flex-col justify-center">
-            <div class="video-wrapper">
-                <div id="player"></div>
-                <div id="emptyOverlay" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 bg-slate-950 pointer-events-none">
-                    <i class="fas fa-play-circle text-6xl mb-4 opacity-20"></i>
-                    <p class="text-lg">請在右側加入影片</p>
-                </div>
-            </div>
-            <div id="errorAlert" class="mt-4 p-4 bg-red-900/30 border border-red-500/50 rounded-xl text-red-200 text-sm hidden flex items-center gap-3">
-                <i class="fas fa-exclamation-triangle text-lg"></i>
-                <div>
-                    <p class="font-bold">播放受限</p>
-                    <p id="errorMsg">此影片可能禁止嵌入。若此問題頻繁出現，請嘗試使用線上伺服器開啟此頁面。</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- C. 右側：清單區域 -->
-        <section class="flex-grow md:w-96 glass rounded-2xl flex flex-col overflow-hidden">
-            <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
-                <div class="flex items-center gap-2">
-                    <i class="fas fa-stream text-red-500"></i>
-                    <span class="font-bold">待播清單</span>
-                </div>
-                <span id="videoCount" class="text-[10px] px-2 py-1 bg-slate-700 rounded-full text-slate-300 font-mono">0</span>
+    <!-- UI Templates (Invisible) -->
+    <template id="video-item-template">
+        <div class="video-item group flex items-center gap-3 p-3 bg-slate-900 border border-slate-700 rounded-xl transition-all hover:border-slate-500 hover:bg-slate-800/80">
+            <div class="handle cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-400 p-1">
+                <i class="fas fa-grip-vertical"></i>
             </div>
             
-            <div id="playlist" class="flex-grow overflow-y-auto p-2 space-y-2">
-                <!-- 影片項目 -->
+            <div class="flex-grow min-w-0">
+                <h4 class="title text-sm font-medium truncate text-slate-200">影片載入中...</h4>
             </div>
 
-            <div class="p-4 border-t border-slate-800 text-[10px] text-slate-500 text-center">
-                <i class="fas fa-info-circle mr-1"></i> 版權 MV 若出現「請到 YouTube 觀看」屬官方硬性限制
-            </div>
-        </section>
-    </main>
+            <div class="flex items-center gap-2">
+                <!-- Button 1: Repeat Counter -->
+                <button class="repeat-btn w-8 h-8 flex items-center justify-center bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors" title="重複次數">
+                    <span class="count-num">1</span>
+                </button>
 
-    <div id="toast" class="fixed bottom-6 right-6 p-4 rounded-xl glass border-slate-700 text-sm opacity-0 translate-y-10 transition-all duration-300 shadow-2xl z-50"></div>
+                <!-- Button 4: One-time (Ghost) -->
+                <button class="once-btn w-8 h-8 flex items-center justify-center bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors" title="一次性播放 (結束後移除)">
+                    <i class="fas fa-ghost"></i>
+                </button>
+
+                <!-- Button 3: Random -->
+                <button class="random-btn w-8 h-8 flex items-center justify-center bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors" title="播放後隨機跳轉">
+                    <i class="fas fa-random"></i>
+                </button>
+
+                <!-- Button 2: Remove -->
+                <button class="delete-btn w-8 h-8 flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors" title="移除影片">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+        </div>
+    </template>
 
     <script>
-        let player;
-        let playlistData = [];
+        // --- State Management ---
+        let playlist = [];
+        let player = null;
         let currentIndex = -1;
         let currentRepeatCount = 0;
         let isPlayerReady = false;
 
+        // --- YouTube API Setup ---
         const tag = document.createElement('script');
         tag.src = "https://www.youtube.com/iframe_api";
         const firstScriptTag = document.getElementsByTagName('script')[0];
         firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
         function onYouTubeIframeAPIReady() {
-            // 使用正確的 Origin 以最大化版權影片相容性
-            let origin = window.location.origin;
-            if (origin === "null" || !origin) origin = "http://localhost"; 
-
             player = new YT.Player('player', {
                 height: '100%',
                 width: '100%',
-                // 修正：使用標準 youtube.com 而非 nocookie
-                host: 'https://www.youtube.com',
                 playerVars: {
-                    'autoplay': 1,
+                    'autoplay': 0,
                     'controls': 1,
+                    'modestbranding': 1,
                     'rel': 0,
-                    'enablejsapi': 1,
-                    'origin': origin,
-                    'widget_referrer': origin,
-                    'modestbranding': 1
+                    'origin': window.location.origin
                 },
                 events: {
-                    'onReady': () => { isPlayerReady = true; },
-                    'onStateChange': handleStateChange,
-                    'onError': handleError
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange,
+                    'onError': onPlayerError
                 }
             });
         }
 
-        function handleStateChange(event) {
+        function onPlayerReady(event) {
+            isPlayerReady = true;
+            document.getElementById('placeholder').style.display = 'flex';
+        }
+
+        function onPlayerStateChange(event) {
+            // YT.PlayerState.ENDED = 0
             if (event.data === YT.PlayerState.ENDED) {
-                const video = playlistData[currentIndex];
-                currentRepeatCount++;
+                handleVideoEnd();
+            }
+        }
 
-                const needsRepeat = (video.repeat === 'infinity') || (currentRepeatCount < video.repeat);
+        function onPlayerError(event) {
+            let msg = "影片加載出錯。";
+            if (event.data === 101 || event.data === 150) {
+                msg = "版權方禁止在此環境嵌入。自動跳至下一首。";
+            }
+            showError(msg);
+            setTimeout(playNext, 3000);
+        }
 
-                if (needsRepeat) {
-                    player.playVideo();
+        // --- Core Logic ---
+        function handleVideoEnd() {
+            if (currentIndex === -1) return;
+            const video = playlist[currentIndex];
+            currentRepeatCount++;
+
+            // Handle Repeats
+            const targetRepeats = video.repeats === '∞' ? Infinity : parseInt(video.repeats);
+            
+            if (currentRepeatCount < targetRepeats) {
+                player.playVideo();
+                return;
+            }
+
+            // End of its turn
+            currentRepeatCount = 0;
+
+            // Handle One-time (Remove after play)
+            if (video.once) {
+                const idToRemove = video.id;
+                playNext(true); // Special next that considers the current one is being deleted
+                removeFromPlaylist(idToRemove);
+            } else {
+                playNext();
+            }
+        }
+
+        function playNext(wasDeleted = false) {
+            if (playlist.length === 0) {
+                currentIndex = -1;
+                updateUI();
+                return;
+            }
+
+            const currentVideo = playlist[currentIndex];
+            
+            if (currentVideo && currentVideo.random) {
+                // Pick random index different from current if possible
+                if (playlist.length > 1) {
+                    let nextIdx = currentIndex;
+                    while(nextIdx === currentIndex) {
+                        nextIdx = Math.floor(Math.random() * playlist.length);
+                    }
+                    currentIndex = nextIdx;
+                }
+            } else {
+                // If the current video was just deleted, the "next" is actually at the same index
+                if (!wasDeleted) {
+                    currentIndex = (currentIndex + 1) % playlist.length;
                 } else {
-                    nextVideo();
+                    if (currentIndex >= playlist.length) currentIndex = 0;
                 }
             }
+
+            loadVideo(currentIndex);
         }
 
-        function nextVideo() {
-            if (playlistData.length === 0) return;
+        function loadVideo(index) {
+            if (index < 0 || index >= playlist.length) return;
+            currentIndex = index;
+            currentRepeatCount = 0;
+            const video = playlist[currentIndex];
 
-            const currentVideo = playlistData[currentIndex];
-            const wasOneTime = currentVideo.oneTime;
-
-            // 移除一次性影片
-            if (wasOneTime) {
-                playlistData.splice(currentIndex, 1);
-                // 移除後索引不需要增加，因為後面的補上來了
-            } else {
-                currentIndex++;
-            }
-
-            // 隨機邏輯
-            if (currentVideo.random && playlistData.length > 1) {
-                currentIndex = Math.floor(Math.random() * playlistData.length);
-            }
-
-            // 循環檢查
-            if (currentIndex >= playlistData.length) {
-                currentIndex = 0;
-            }
-
-            if (playlistData.length > 0) {
-                playVideo(currentIndex);
-            } else {
-                stopEverything();
-            }
-        }
-
-        function handleError(e) {
-            const errorArea = document.getElementById('errorAlert');
-            const errorMsg = document.getElementById('errorMsg');
-            errorArea.classList.remove('hidden');
-
-            let txt = "發生未知錯誤 (代碼 " + e.data + ")";
-            if (e.data === 101 || e.data === 150) txt = "版權擁有者禁止在外部嵌入播放。這類官方影片無法透過本工具播放，請跳過。";
-            if (e.data === 153) txt = "YouTube 安全驗證失敗。建議您將此 HTML 檔案上傳到伺服器 (如 GitHub Pages) 或使用 Live Server 開啟。";
+            player.loadVideoById(video.youtubeId);
+            document.getElementById('placeholder').style.display = 'none';
+            document.getElementById('currentInfo').classList.remove('hidden');
+            document.getElementById('currentTitle').innerText = video.title;
+            document.getElementById('errorDisplay').classList.add('hidden');
             
-            errorMsg.innerText = txt;
-            
-            // 自動跳下一首
-            setTimeout(() => {
-                errorArea.classList.add('hidden');
-                nextVideo();
-            }, 4000);
+            updateUI();
         }
 
-        function extractId(url) {
-            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        // --- Helper Functions ---
+        function extractVideoID(url) {
+            const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
             const match = url.match(regExp);
             return (match && match[2].length === 11) ? match[2] : null;
         }
 
-        async function addVideo() {
-            const input = document.getElementById('urlInput');
-            const id = extractId(input.value.trim());
+        async function fetchVideoTitle(videoId) {
+            // Simplified title fetch (could use YouTube Data API with key for real titles)
+            // Here we just return a placeholder or use the ID if we don't have a backend
+            return `影片 ID: ${videoId}`;
+        }
 
-            if (!id) {
-                showToast("⚠️ 無效的網址", "bg-red-500");
-                return;
+        function addToPlaylist(ytId) {
+            const newItem = {
+                id: Date.now().toString(),
+                youtubeId: ytId,
+                title: `載入中: ${ytId}`,
+                repeats: 1, // 1, 2, 3, ∞
+                once: true,
+                random: false
+            };
+
+            playlist.push(newItem);
+            renderPlaylist();
+            updatePlaylistCount();
+
+            // Try to auto-play if first video
+            if (currentIndex === -1) {
+                loadVideo(0);
             }
 
-            showToast("🔍 抓取影片資訊...", "bg-blue-600");
-            
-            let title = "未命名影片";
-            try {
-                const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${id}`);
-                const data = await res.json();
-                title = data.title || "未知標題";
-            } catch(e) {}
-
-            playlistData.push({
-                id: id,
-                title: title,
-                repeat: 1,
-                oneTime: true,
-                random: false
-            });
-
-            input.value = "";
-            renderPlaylist();
-            
-            if (currentIndex === -1) playVideo(0);
+            // Attempt to get OEmbed title for better UI
+            fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${ytId}&format=json`)
+                .then(res => res.json())
+                .then(data => {
+                    newItem.title = data.title;
+                    renderPlaylist();
+                })
+                .catch(() => {
+                    newItem.title = `YouTube 影片 (${ytId})`;
+                    renderPlaylist();
+                });
         }
 
-        function playVideo(index) {
-            if (!isPlayerReady || index >= playlistData.length) return;
-            
-            currentIndex = index;
-            currentRepeatCount = 0;
-            document.getElementById('emptyOverlay').style.display = 'none';
-            document.getElementById('errorAlert').classList.add('hidden');
-            
-            player.loadVideoById(playlistData[currentIndex].id);
-            renderPlaylist();
-        }
+        function removeFromPlaylist(id) {
+            const idx = playlist.findIndex(v => v.id === id);
+            if (idx === -1) return;
 
-        function stopEverything() {
-            currentIndex = -1;
-            player.stopVideo();
-            document.getElementById('emptyOverlay').style.display = 'flex';
+            const isCurrent = (idx === currentIndex);
+            playlist.splice(idx, 1);
+
+            if (isCurrent) {
+                if (playlist.length > 0) {
+                    playNext(true);
+                } else {
+                    player.stopVideo();
+                    currentIndex = -1;
+                    document.getElementById('currentInfo').classList.add('hidden');
+                    document.getElementById('placeholder').style.display = 'flex';
+                }
+            } else if (idx < currentIndex) {
+                currentIndex--;
+            }
+
             renderPlaylist();
+            updatePlaylistCount();
         }
 
         function renderPlaylist() {
             const container = document.getElementById('playlist');
-            container.innerHTML = "";
-            document.getElementById('videoCount').innerText = playlistData.length;
+            container.innerHTML = '';
+            const template = document.getElementById('video-item-template');
 
-            playlistData.forEach((item, i) => {
-                const div = document.createElement('div');
-                div.className = `playlist-item p-3 rounded-xl flex items-center gap-3 border border-slate-800 shadow-sm ${i === currentIndex ? 'active' : 'bg-slate-900/40'}`;
+            playlist.forEach((video, index) => {
+                const clone = template.content.cloneNode(true);
+                const root = clone.querySelector('.video-item');
                 
-                div.innerHTML = `
-                    <div class="drag-handle cursor-grab text-slate-600 hover:text-slate-400">
-                        <i class="fas fa-ellipsis-v"></i>
-                    </div>
-                    <div class="flex-grow min-w-0 cursor-pointer" onclick="playVideo(${i})">
-                        <p class="text-[13px] font-semibold truncate ${i === currentIndex ? 'text-white' : 'text-slate-400'}">${item.title}</p>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <button onclick="toggleAttr(${i}, 'repeat')" class="w-7 h-7 rounded-lg text-[10px] font-bold border border-slate-700 hover:bg-slate-700 transition-colors ${item.repeat !== 1 ? 'text-yellow-400 border-yellow-500/50' : 'text-slate-500'}">
-                            ${item.repeat === 'infinity' ? '∞' : item.repeat}
-                        </button>
-                        <button onclick="toggleAttr(${i}, 'oneTime')" class="w-7 h-7 rounded-lg text-xs border border-slate-700 hover:bg-slate-700 transition-colors ${item.oneTime ? 'text-blue-400 border-blue-500/50' : 'text-slate-500'}" title="一次性播放">
-                            <i class="fas fa-ghost"></i>
-                        </button>
-                        <button onclick="toggleAttr(${i}, 'random')" class="w-7 h-7 rounded-lg text-xs border border-slate-700 hover:bg-slate-700 transition-colors ${item.random ? 'text-green-400 border-green-500/50' : 'text-slate-500'}" title="隨機下首">
-                            <i class="fas fa-random"></i>
-                        </button>
-                        <button onclick="removeVideo(${i})" class="w-7 h-7 rounded-lg text-xs text-slate-600 hover:text-red-500 hover:bg-red-500/10">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                `;
-                container.appendChild(div);
-            });
-            initSortable();
-        }
-
-        function toggleAttr(index, attr) {
-            if (attr === 'repeat') {
-                const steps = [1, 2, 3, 'infinity'];
-                const curIdx = steps.indexOf(playlistData[index].repeat);
-                playlistData[index].repeat = steps[(curIdx + 1) % steps.length];
-            } else {
-                playlistData[index][attr] = !playlistData[index][attr];
-            }
-            renderPlaylist();
-        }
-
-        function removeVideo(index) {
-            playlistData.splice(index, 1);
-            if (index === currentIndex) {
-                if (playlistData.length > 0) nextVideo();
-                else stopEverything();
-            } else if (index < currentIndex) {
-                currentIndex--;
-            }
-            renderPlaylist();
-        }
-
-        function initSortable() {
-            new Sortable(document.getElementById('playlist'), {
-                handle: '.drag-handle',
-                animation: 250,
-                ghostClass: 'sortable-ghost',
-                onEnd: (evt) => {
-                    const item = playlistData.splice(evt.oldIndex, 1)[0];
-                    playlistData.splice(evt.newIndex, 0, item);
-                    if (currentIndex === evt.oldIndex) currentIndex = evt.newIndex;
-                    else if (currentIndex > evt.oldIndex && currentIndex <= evt.newIndex) currentIndex--;
-                    else if (currentIndex < evt.oldIndex && currentIndex >= evt.newIndex) currentIndex++;
-                    renderPlaylist();
+                // Active state
+                if (index === currentIndex) {
+                    root.classList.add('ring-2', 'ring-blue-500', 'bg-blue-900/20');
                 }
+
+                root.querySelector('.title').innerText = video.title;
+                root.querySelector('.title').onclick = () => loadVideo(index);
+                root.querySelector('.title').classList.add('cursor-pointer');
+
+                // Buttons logic
+                const repBtn = root.querySelector('.repeat-btn');
+                const repNum = repBtn.querySelector('.count-num');
+                repNum.innerText = video.repeats;
+                if (video.repeats !== 1) repBtn.classList.add('text-blue-400');
+                repBtn.onclick = () => {
+                    if (video.repeats === 1) video.repeats = 2;
+                    else if (video.repeats === 2) video.repeats = 3;
+                    else if (video.repeats === 3) video.repeats = '∞';
+                    else video.repeats = 1;
+                    renderPlaylist();
+                };
+
+                const onceBtn = root.querySelector('.once-btn');
+                if (video.once) onceBtn.classList.add('text-blue-400');
+                else onceBtn.classList.add('text-slate-500');
+                onceBtn.onclick = () => {
+                    video.once = !video.once;
+                    renderPlaylist();
+                };
+
+                const randBtn = root.querySelector('.random-btn');
+                if (video.random) randBtn.classList.add('text-green-400');
+                else randBtn.classList.add('text-slate-500');
+                randBtn.onclick = () => {
+                    video.random = !video.random;
+                    renderPlaylist();
+                };
+
+                root.querySelector('.delete-btn').onclick = () => removeFromPlaylist(video.id);
+
+                container.appendChild(clone);
             });
         }
 
-        function showToast(msg, bgColor) {
-            const t = document.getElementById('toast');
-            t.innerText = msg;
-            t.className = `fixed bottom-6 right-6 p-4 rounded-xl text-white text-sm opacity-100 translate-y-0 transition-all shadow-2xl z-50 ${bgColor}`;
-            setTimeout(() => {
-                t.classList.add('opacity-0', 'translate-y-10');
-            }, 3000);
+        function updatePlaylistCount() {
+            document.getElementById('playlistCount').innerText = playlist.length;
         }
 
-        document.getElementById('loadBtn').onclick = addVideo;
-        document.getElementById('urlInput').onkeydown = (e) => { if(e.key==='Enter') addVideo(); };
+        function updateUI() {
+            renderPlaylist();
+        }
+
+        function showError(msg) {
+            const err = document.getElementById('errorDisplay');
+            const errMsg = document.getElementById('errorMsg');
+            err.classList.remove('hidden');
+            errMsg.innerText = msg;
+            setTimeout(() => err.classList.add('hidden'), 5000);
+        }
+
+        // --- Event Listeners ---
+        document.getElementById('loadBtn').onclick = () => {
+            const input = document.getElementById('videoInput');
+            const id = extractVideoID(input.value.trim());
+            if (id) {
+                addToPlaylist(id);
+                input.value = '';
+            } else {
+                showError("網址格式錯誤，請重新貼上。");
+            }
+        };
+
+        document.getElementById('videoInput').onkeydown = (e) => {
+            if (e.key === 'Enter') document.getElementById('loadBtn').click();
+        };
+
         document.getElementById('pasteBtn').onclick = async () => {
             try {
                 const text = await navigator.clipboard.readText();
-                document.getElementById('urlInput').value = text;
-                showToast("📋 已從剪貼簿貼上", "bg-slate-700");
+                document.getElementById('videoInput').value = text;
             } catch (err) {
-                showToast("❌ 權限不足，請手動貼上", "bg-red-600");
+                showError("無法讀取剪貼簿，請手動貼上。");
             }
         };
+
+        // Initialize Draggable Playlist
+        new Sortable(document.getElementById('playlist'), {
+            animation: 150,
+            handle: '.handle',
+            ghostClass: 'ghost-card',
+            onEnd: function (evt) {
+                const item = playlist.splice(evt.oldIndex, 1)[0];
+                playlist.splice(evt.newIndex, 0, item);
+                
+                // Keep currentIndex updated
+                if (currentIndex === evt.oldIndex) {
+                    currentIndex = evt.newIndex;
+                } else if (evt.oldIndex < currentIndex && evt.newIndex >= currentIndex) {
+                    currentIndex--;
+                } else if (evt.oldIndex > currentIndex && evt.newIndex <= currentIndex) {
+                    currentIndex++;
+                }
+                renderPlaylist();
+            }
+        });
     </script>
 </body>
 </html>
